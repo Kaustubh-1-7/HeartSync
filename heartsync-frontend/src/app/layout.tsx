@@ -3,7 +3,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import Providers from "./providers"; // Import the new provider component
+import Providers from "./providers";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -19,8 +19,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={inter.className}>
-        <Providers>{children}</Providers> {/* Wrap your app with the provider */}
+      {/* Add a background color to the body */}
+      <body className={`${inter.className} bg-gray-50`}>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

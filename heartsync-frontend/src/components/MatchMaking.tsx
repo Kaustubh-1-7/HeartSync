@@ -2,37 +2,49 @@
 
 'use client';
 
-import { useReadContract, useWriteContract } from 'wagmi';
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { matchmakerConfig } from '../contracts';
+import { useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
 
 export function Matchmaking() {
-  // Hook to read the match counter
+  const queryClient = useQueryClient();
+
   const { data: matchCounter, isLoading } = useReadContract({
     ...matchmakerConfig,
     functionName: 'matchCounter',
-    // The 'watch: true' property has been removed to fix the error.
-  });
+  }) as { data: bigint | undefined, isLoading: boolean };
 
-  // Hook to write to the enterMatchingPool function
-  const { writeContract: enterPool, isPending } = useWriteContract();
+  const { writeContract: enterPool, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
+
+  useEffect(() => {
+    if (isConfirmed) {
+      toast.success('Successfully entered the pool!');
+      queryClient.invalidateQueries(); // Refetch everything
+    }
+    if(error){
+        toast.error(error.message)
+    }
+  }, [isConfirmed, error, queryClient]);
 
   return (
-    <div>
-      <h2 className="text-xl font-semibold">Step 2: Join the Matchmaking Pool</h2>
-      <div className="my-4 p-4 border rounded-lg bg-gray-50">
-        <h3 className="text-lg font-medium">Total Matches Made on HeartSync: 
-          <span className="font-bold text-indigo-600 ml-2">
-            {isLoading ? '...' : matchCounter?.toString()}
-          </span>
-        </h3>
+    <section>
+      <h2 className="text-2xl font-bold text-gray-800">Step 2: Join the Matchmaking Pool</h2>
+      <div className="my-4 p-6 border rounded-xl bg-white shadow-sm text-center">
+        <h3 className="text-lg font-medium text-gray-700">Total Matches Made on HeartSync</h3>
+        <p className="text-5xl font-bold text-indigo-600 mt-2">
+          {isLoading ? '...' : matchCounter?.toString()}
+        </p>
       </div>
       <button 
-        disabled={isPending} 
+        disabled={isPending || isConfirming} 
         onClick={() => enterPool({ ...matchmakerConfig, functionName: 'enterMatchingPool' })}
-        className="w-full justify-center rounded-md border border-transparent bg-green-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:bg-gray-400"
+        className="w-full justify-center rounded-md border border-transparent bg-green-600 py-3 px-4 text-base font-medium text-white shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:bg-gray-400"
       >
-        {isPending ? 'Entering Pool...' : 'Enter Matching Pool'}
+        {isPending ? 'Confirming in wallet...' : isConfirming ? 'Processing on-chain...' : 'Enter Matching Pool'}
       </button>
-    </div>
+    </section>
   );
 }
