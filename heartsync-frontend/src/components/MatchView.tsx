@@ -1,121 +1,123 @@
-// src/components/MatchView.tsx
+// src/components/MatchView.tsx (Final Corrected Version)
 
 'use client';
 
-import React from 'react';
-import { useAccount, useReadContract, useWriteContract } from 'wagmi';
+import React, { useEffect } from 'react';
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { useQueryClient } from '@tanstack/react-query';
 import { profileManagerConfig, escrowChatConfig, matchmakerConfig } from '../contracts';
+import { toast } from 'react-hot-toast';
 
-// Define the shape of our data types for TypeScript
-type Profile = {
-  gender: number;
-  preferred: number;
-  age: bigint;
-  interestsHash: string;
-}
-type Escrow = {
-  depositedA: boolean;
-  depositedB: boolean;
-  acceptedA: boolean;
-  acceptedB: boolean;
-}
+// --- Type Definitions ---
+type Profile = { gender: number; preferred: number; age: bigint; interestsHash: string; }
+type Escrow = { depositedA: boolean; depositedB: boolean; acceptedA: boolean; acceptedB: boolean; }
 const GENDER_MAP = ['Male', 'Female', 'Both'];
 
-// The component receives the matchId and partner's tokenId as props
 export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint, partnerTokenId: bigint }) {
   const { address } = useAccount();
-  const { writeContract: deposit, isPending: isDepositing } = useWriteContract();
-  const { writeContract: accept, isPending: isAccepting } = useWriteContract();
+  const queryClient = useQueryClient();
 
-  // Hook 1: Get the profile data for the matched partner
-  const { data: partnerProfile, isLoading: isLoadingProfile } = useReadContract({
-    ...profileManagerConfig,
-    functionName: 'getProfile',
-    args: [partnerTokenId],
-  }) as { data: Profile | undefined; isLoading: boolean };
+  // --- WRITE HOOKS for all user actions ---
+  const { writeContract: deposit, data: depositHash, isPending: isDepositing, error: depositError } = useWriteContract();
+  const { writeContract: accept, data: acceptHash, isPending: isAccepting, error: acceptError } = useWriteContract();
+  const { writeContract: shareSocials, data: shareSocialsHash, isPending: isSharing, error: shareSocialsError } = useWriteContract();
 
-  // Hook 2: Get the current state of the escrow for this match
-  const { data: escrowState, isLoading: isLoadingEscrow } = useReadContract({
-    ...escrowChatConfig,
-    functionName: 'escrows',
-    args: [matchId],
-  }) as { data: Escrow | undefined; isLoading: boolean };
+  // --- HOOKS TO WAIT for transactions to be confirmed ---
+  const { isSuccess: isDepositConfirmed } = useWaitForTransactionReceipt({ hash: depositHash });
+  const { isSuccess: isAcceptConfirmed } = useWaitForTransactionReceipt({ hash: acceptHash });
+  const { isSuccess: isShareSocialsConfirmed } = useWaitForTransactionReceipt({ hash: shareSocialsHash });
 
-  // Hook 3: Get the original match data to know who is UserA and UserB
-  const { data: matchData } = useReadContract({
-    ...matchmakerConfig,
-    functionName: 'matches',
-    args: [matchId],
-  });
+  // --- AUTO-REFRESH LOGIC ---
+  // This useEffect hook runs when any transaction is confirmed, and refetches all on-chain data.
+  useEffect(() => {
+    if (isDepositConfirmed || isAcceptConfirmed || isShareSocialsConfirmed) {
+      toast.success('Action confirmed! State updated.');
+      queryClient.invalidateQueries(); // This is the magic that refetches everything
+    }
+    // Show errors if transactions fail
+    if (depositError) toast.error(depositError.message);
+    if (acceptError) toast.error(acceptError.message);
+    if (shareSocialsError) toast.error(shareSocialsError.message);
+  }, [isDepositConfirmed, isAcceptConfirmed, isShareSocialsConfirmed, depositError, acceptError, shareSocialsError, queryClient]);
+
+
+  // --- READ HOOKS for displaying on-chain data ---
+  const { data: partnerProfile, isLoading: isLoadingProfile } = useReadContract({ ...profileManagerConfig, functionName: 'getProfile', args: [partnerTokenId] }) as { data: Profile | undefined; isLoading: boolean };
+  const { data: escrowState, isLoading: isLoadingEscrow } = useReadContract({ ...escrowChatConfig, functionName: 'escrows', args: [matchId] }) as { data: Escrow | undefined; isLoading: boolean };
+  const { data: matchData } = useReadContract({ ...matchmakerConfig, functionName: 'matches', args: [matchId] });
   const userATokenId = Array.isArray(matchData) ? matchData[0] : undefined;
-
-  const myTokenId = useReadContract({
-    ...profileManagerConfig,
-    functionName: 'ownerToTokenId',
-    args: [address!],
-  }).data;
+  const { data: myTokenId } = useReadContract({ ...profileManagerConfig, functionName: 'ownerToTokenId', args: [address!] });
 
   const amIUserA = myTokenId === userATokenId;
   const hasIDeposited = amIUserA ? escrowState?.depositedA : escrowState?.depositedB;
+  const hasIAccepted = amIUserA ? escrowState?.acceptedA : escrowState?.acceptedB;
+  const bothAccepted = escrowState?.acceptedA && escrowState?.acceptedB;
+
+  // --- Socials Sharing Handler ---
+  function handleShareSocials(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    shareSocials({
+      ...escrowChatConfig,
+      functionName: 'exchangeSocials',
+      args: [matchId],
+      value: BigInt(10000000000000000), // 0.01 ETH fee
+    });
+  }
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold text-indigo-600">You have a new match!</h2>
-      <div className="mt-4 p-4 border rounded-lg bg-white shadow">
-    <h3 className="text-lg font-semibold">Your Partner&apos;s Profile (Token ID: {partnerTokenId.toString()})</h3>
-        {isLoadingProfile ? <p>Loading partner info...</p> : (
-          <div className="text-sm text-gray-700">
-            <p><strong>Age:</strong> {partnerProfile?.age.toString()}</p>
-            <p><strong>Gender:</strong> {partnerProfile?.gender !== undefined ? GENDER_MAP[partnerProfile.gender] : 'Unknown'}</p>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-8 p-4 border rounded-lg bg-white shadow">
-        <h3 className="text-lg font-semibold">Next Steps: Unlock Chat</h3>
-        {isLoadingEscrow ? <p>Loading escrow status...</p> : (
-          <ul className="space-y-2 mt-2">
-            <li className="flex items-center">
-              {escrowState?.depositedA && escrowState?.depositedB
-                ? <span className="text-green-500">✅ Both users have deposited 0.01 ETH.</span>
-                : <span className="text-yellow-600">⏳ Waiting for both users to deposit...</span>
-              }
-            </li>
-            <li className="flex items-center">
-              {escrowState?.acceptedA && escrowState?.acceptedB
-                ? <span className="text-green-500">✅ Match accepted by both! Funds refunded.</span>
-                : <span className="text-yellow-600">⏳ Waiting for both users to accept...</span>
-              }
-            </li>
-          </ul>
-        )}
-
-        <div className="mt-4 flex space-x-4">
-          <button
-            disabled={isDepositing || hasIDeposited}
-            onClick={() => deposit({
-              ...escrowChatConfig,
-              functionName: 'deposit',
-              args: [matchId],
-              value: BigInt("10000000000000000"), // 0.01 ETH in wei
-            })}
-            className="flex-1 justify-center rounded-md border border-transparent bg-blue-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:bg-gray-400"
-          >
-            {isDepositing ? 'Depositing...' : hasIDeposited ? 'You Have Deposited' : 'Deposit 0.01 ETH'}
-          </button>
-          <button
-            disabled={isAccepting || !(escrowState?.depositedA && escrowState?.depositedB)}
-            onClick={() => accept({
-              ...escrowChatConfig,
-              functionName: 'acceptMatch',
-              args: [matchId],
-            })}
-            className="flex-1 justify-center rounded-md border border-transparent bg-green-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-green-700 disabled:bg-gray-400"
-          >
-            {isAccepting ? 'Accepting...' : 'Accept Match'}
-          </button>
+    <div className="space-y-8">
+      <section>
+        <h2 className="text-2xl font-bold text-indigo-600">You have a new match!</h2>
+        <div className="mt-4 p-6 border rounded-xl bg-white shadow-sm">
+          <h3 className="text-lg font-semibold">Your Partner&apos;s Profile (Token ID: {partnerTokenId.toString()})</h3>
+          {isLoadingProfile ? <p>Loading...</p> : (
+            <div className="text-sm text-gray-700">
+              <p><strong>Age:</strong> {partnerProfile?.age.toString()}</p>
+              <p><strong>Gender:</strong> {partnerProfile?.gender !== undefined ? GENDER_MAP[partnerProfile.gender] : 'Unknown'}</p>
+            </div>
+          )}
         </div>
-      </div>
+      </section>
+
+      <section>
+        <h2 className="text-2xl font-bold text-gray-800">Next Steps: Escrow & Acceptance</h2>
+        <div className="mt-4 p-6 border rounded-xl bg-white shadow-sm">
+          {isLoadingEscrow ? <p>Loading escrow status...</p> : (
+            <ul className="space-y-3 text-lg">
+              <li className="flex items-center gap-x-3">{escrowState?.depositedA && escrowState?.depositedB ? <span className="text-green-500">✅</span> : <span className="text-yellow-600">⏳</span>} Both users deposit 0.01 ETH.</li>
+              <li className="flex items-center gap-x-3">{bothAccepted ? <span className="text-green-500">✅</span> : <span className="text-yellow-600">⏳</span>} Both users accept the match.</li>
+            </ul>
+          )}
+          <div className="mt-6 flex flex-col sm:flex-row gap-4">
+            <button
+              disabled={isDepositing || hasIDeposited}
+              onClick={() => deposit({ ...escrowChatConfig, functionName: 'deposit', args: [matchId], value: BigInt(10000000000000000) })}
+              className="flex-1 justify-center rounded-md border border-transparent bg-blue-600 py-3 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+              {isDepositing ? 'Depositing...' : hasIDeposited ? 'You Have Deposited' : '1. Deposit 0.01 ETH'}
+            </button>
+            <button
+              disabled={isAccepting || hasIAccepted || !escrowState?.depositedA || !escrowState?.depositedB}
+              onClick={() => accept({ ...escrowChatConfig, functionName: 'acceptMatch', args: [matchId] })}
+              className="flex-1 justify-center rounded-md border border-transparent bg-green-600 py-3 px-4 text-sm font-medium text-white shadow-sm hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+              {isAccepting ? 'Accepting...' : hasIAccepted ? 'You Accepted' : '2. Accept Match'}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* --- NEW UI FOR SOCIALS --- */}
+      {/* This section will only appear after both users have accepted the match */}
+      {bothAccepted && (
+        <section>
+          <h2 className="text-2xl font-bold text-gray-800">Final Step: Exchange Socials</h2>
+          <form onSubmit={handleShareSocials} className="mt-4 p-6 border rounded-xl bg-white shadow-sm">
+            <p className="text-sm text-gray-600 mb-4">Pay a 0.01 ETH fee to finalize the exchange and reveal your socials to each other off-chain.</p>
+            <button type="submit" disabled={isSharing} className="w-full justify-center rounded-md border border-transparent bg-purple-600 py-3 px-4 text-sm font-medium text-white shadow-sm hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
+              {isSharing ? 'Processing...' : 'Pay Fee & Exchange Socials'}
+            </button>
+          </form>
+        </section>
+      )}
     </div>
   );
 }
