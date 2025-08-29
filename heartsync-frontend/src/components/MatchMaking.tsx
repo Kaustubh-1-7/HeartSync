@@ -1,15 +1,16 @@
-// src/components/Matchmaking.tsx
+// src/components/Matchmaking.tsx (Corrected Version)
 
 'use client';
 
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { matchmakerConfig } from '../contracts';
+import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi';
+import { matchmakerConfig, profileManagerConfig } from '../contracts'; // Import profileManagerConfig
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 
 export function Matchmaking() {
   const queryClient = useQueryClient();
+  const { address } = useAccount(); // Get the user's address
 
   const { data: matchCounter, isLoading } = useReadContract({
     ...matchmakerConfig,
@@ -22,12 +23,16 @@ export function Matchmaking() {
   useEffect(() => {
     if (isConfirmed) {
       toast.success('Successfully entered the pool!');
-      queryClient.invalidateQueries(); // Refetch everything
+      // --- THE FIX IS HERE ---
+      // We are now explicitly telling wagmi which queries to refetch.
+      // This will force the `isInPool` hook in the ProfileCreator component to get the new status.
+      queryClient.invalidateQueries({ queryKey: [matchmakerConfig.address, 'isInPool', address] });
+      queryClient.invalidateQueries({ queryKey: [matchmakerConfig.address, 'getMatchingPoolSize'] });
     }
     if(error){
         toast.error(error.message)
     }
-  }, [isConfirmed, error, queryClient]);
+  }, [isConfirmed, error, queryClient, address]); // Add address to dependency array
 
   return (
     <section>
