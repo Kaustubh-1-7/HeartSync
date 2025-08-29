@@ -1,5 +1,3 @@
-// src/app/page.tsx
-
 'use client';
 
 import { usePrivy } from '@privy-io/react-auth';
