@@ -1,10 +1,10 @@
-// src/components/Dashboard.tsx (Corrected Version)
+// src/components/Dashboard.tsx (with Debugging Logs)
 
 'use client';
 
 import { usePrivy } from '@privy-io/react-auth';
 import { useAccount, useReadContract, useWatchContractEvent } from 'wagmi';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ProfileCreator } from './ProfileCreator';
 import { Matchmaking } from './MatchMaking';
 import MatchView from './MatchView';
@@ -36,32 +36,48 @@ export default function Dashboard() {
 
   const isOwner = address && contractOwner && address === contractOwner;
 
-  const { data: myTokenId, isSuccess: isTokenIdLoaded } = useReadContract({ // <-- 1. Get the loading status
+  const { data: myTokenId, isSuccess: isTokenIdLoaded } = useReadContract({
     ...profileManagerConfig,
     functionName: 'ownerToTokenId',
     args: [address!],
     query: { enabled: !!address },
   });
 
+  // --- DEBUGGING STARTS HERE ---
+  // We are adding console logs to every important step.
+  useEffect(() => {
+    if (isTokenIdLoaded) {
+      console.log(`[DEBUG] User's Token ID has loaded:`, myTokenId?.toString());
+    }
+  }, [isTokenIdLoaded, myTokenId]);
+
   useWatchContractEvent({
     ...matchmakerConfig,
     eventName: 'MatchCreated',
     onLogs(logs) {
-      // --- FIX IS HERE ---
-      // 2. Only process the logs if we have successfully loaded the user's token ID.
+      // LOG 1: See if the event listener is firing at all.
+      console.log('[DEBUG] MatchCreated event detected!', logs);
+
       if (!isTokenIdLoaded || !myTokenId || Number(myTokenId) === 0) {
-        return; // Don't do anything if we don't know who the user is yet.
+        console.log('[DEBUG] Event processing skipped: myTokenId not ready yet.');
+        return;
       }
 
       (logs as MatchCreatedLog[]).forEach(log => {
         const { matchId, userA_TokenId, userB_TokenId } = log.args;
 
-        // Check if the current user is part of this match
+        // LOG 2: See the values we are about to compare.
+        console.log(`[DEBUG] Processing log. MyTokenId: ${myTokenId}, Event Tokens: [${userA_TokenId}, ${userB_TokenId}]`);
+
         if (myTokenId === userA_TokenId) {
+          // LOG 3: See if the condition was met.
+          console.log('[DEBUG] Match found for User A! Setting state.');
           setActiveMatchId(matchId!);
           setPartnerTokenId(userB_TokenId!);
         }
         if (myTokenId === userB_TokenId) {
+          // LOG 3: See if the condition was met.
+          console.log('[DEBUG] Match found for User B! Setting state.');
           setActiveMatchId(matchId!);
           setPartnerTokenId(userA_TokenId!);
         }
@@ -71,7 +87,7 @@ export default function Dashboard() {
 
   return (
     <div>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <header /* ... */ >
         <div>
           <h1 className="text-2xl font-bold">HeartSync ❤️</h1>
           <p className="text-sm text-gray-500">
