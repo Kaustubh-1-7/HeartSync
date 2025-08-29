@@ -4,47 +4,42 @@
 
 import React from 'react';
 import { PrivyProvider } from '@privy-io/react-auth';
-
-// --- NEW IMPORTS FOR WAGMI ---
 import { WagmiProvider, createConfig, http } from 'wagmi';
 import { sepolia } from 'wagmi/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from 'react-hot-toast';
 
-// --- NEW WAGMI CONFIGURATION ---
-// This creates a client for React Query, which Wagmi uses for caching.
 const queryClient = new QueryClient();
 
-// This creates the configuration object for Wagmi.
 export const config = createConfig({
-  chains: [sepolia], // We are targeting the Sepolia testnet
+  chains: [sepolia],
   transports: {
-    [sepolia.id]: http(), // Use a default public RPC for the chain
+    [sepolia.id]: http(),
   },
 });
 
-
 export default function Providers({ children }: { children: React.ReactNode }) {
+  // The handleLogin function has been removed as it is not needed here.
+  
   return (
     <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID || ''}
+      // There are NO event handler props like onLogin or onSuccess here.
+      // This is the correct configuration.
       config={{
         appearance: {
           theme: 'light',
           accentColor: '#676FFF',
-          logo: 'https://your-logo-url.com/logo.png',
         },
         loginMethods: ['email', 'wallet'],
         defaultChain: sepolia,
         supportedChains: [sepolia],
       }}
     >
-      {/* 
-        The QueryClientProvider and WagmiProvider are now wrapping your app, 
-        inside the PrivyProvider. This makes all wagmi hooks work correctly.
-      */}
       <QueryClientProvider client={queryClient}>
         <WagmiProvider config={config}>
           {children}
+          <Toaster />
         </WagmiProvider>
       </QueryClientProvider>
     </PrivyProvider>
