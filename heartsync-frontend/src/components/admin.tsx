@@ -1,37 +1,32 @@
-// src/components/Admin.tsx
+// src/components/Admin.tsx (Simplified Version)
 
 'use client';
 
-import { useReadContract, useWriteContract } from 'wagmi';
+import { useWriteContract } from 'wagmi';
 import { matchmakerConfig } from '../contracts';
-import { toast } from 'react-hot-toast'; // We'll add this for notifications
+import { toast } from 'react-hot-toast';
 
 export function Admin() {
-  // Hook to read the current number of users in the pool
-  const { data: poolSize } = useReadContract({
-    ...matchmakerConfig,
-    functionName: 'getMatchingPoolSize',
-    // watch: true, // Auto-updates the pool size
-  });
+  // We no longer need to read the pool size.
+  // The smart contract will handle the check.
 
-  // Hook to call the requestMatchmaking function
   const { writeContract: requestMatches, isPending } = useWriteContract({
     mutation: {
       onSuccess: (hash) => {
-        toast.success(`Matchmaking requested! Tx: ${hash}`);
+        toast.success(`Matchmaking requested! See transaction: ${hash}`);
       },
+      // Wagmi automatically handles and displays contract revert errors,
+      // so the user will be notified if the pool size is too small.
       onError: (error) => {
-        toast.error(`Error: ${error.message}`);
+        toast.error(`Transaction failed: ${error.message}`);
       }
     }
   });
 
   const handleRequestMatches = () => {
-    const poolSizeNumber = typeof poolSize === 'number' ? poolSize : Number(poolSize);
-    if (poolSize === undefined || poolSize === null || isNaN(poolSizeNumber) || poolSizeNumber < 2) {
-      toast.error('Not enough users in the pool to match.');
-      return;
-    }
+    // We simply call the function directly.
+    // If the require(matchingPool.length >= 2, ...) statement in the contract fails,
+    // MetaMask will show an error and the transaction will not be sent.
     requestMatches({
       ...matchmakerConfig,
       functionName: 'requestMatchmaking',
@@ -41,20 +36,12 @@ export function Admin() {
   return (
     <div className="mt-8 p-4 border-2 border-red-500 rounded-lg bg-red-50">
       <h2 className="text-xl font-bold text-red-700">Admin Panel</h2>
-      <div className="my-4">
-        <p className="text-lg">
-          Users currently in matching pool: 
-          <span className="font-bold ml-2">{poolSize?.toString() ?? '...'}</span>
-        </p>
-      </div>
+      <p className="my-4 text-sm text-gray-700">
+        Click the button below to trigger a new round of matchmaking for all users currently in the pool. The smart contract will only proceed if there are 2 or more users available.
+      </p>
       <button
         onClick={handleRequestMatches}
-        disabled={
-          isPending ||
-          poolSize === undefined ||
-          poolSize === null ||
-          (typeof poolSize === 'number' ? poolSize < 2 : Number(poolSize) < 2)
-        }
+        disabled={isPending}
         className="w-full justify-center rounded-md border border-transparent bg-red-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-red-700 disabled:bg-gray-400"
       >
         {isPending ? 'Requesting...' : 'Trigger Matchmaking Round'}
