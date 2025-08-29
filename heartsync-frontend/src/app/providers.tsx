@@ -9,12 +9,16 @@ import { sepolia } from 'wagmi/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 
+
+
 const queryClient = new QueryClient();
 
 export const config = createConfig({
   chains: [sepolia],
   transports: {
-    [sepolia.id]: http(),
+    // --- THIS IS THE FIX ---
+    // We are now explicitly telling wagmi to use your Alchemy RPC URL.
+    [sepolia.id]: http(process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL), 
   },
 });
 
