@@ -1,38 +1,25 @@
-// src/components/Matchmaking.tsx (Corrected Version)
+// src/components/Matchmaking.tsx
 
 'use client';
 
-import { useReadContract, useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi';
-import { matchmakerConfig, profileManagerConfig } from '../contracts'; // Import profileManagerConfig
-import { useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'react-hot-toast';
+import { useReadContract } from 'wagmi';
+import { matchmakerConfig } from '../contracts';
+// --- FIX: Import the official types from wagmi ---
+import type { Config } from 'wagmi';
+import type { WriteContractMutate } from 'wagmi/query';
 
-export function Matchmaking() {
-  const queryClient = useQueryClient();
-  const { address } = useAccount(); // Get the user's address
+// --- FIX: Use the official wagmi types for the component's props ---
+type MatchmakingProps = {
+  onEnterPool: WriteContractMutate<Config>;
+  isEnteringPool: boolean;
+  isConfirming: boolean;
+};
 
+export function Matchmaking({ onEnterPool, isEnteringPool, isConfirming }: MatchmakingProps) {
   const { data: matchCounter, isLoading } = useReadContract({
     ...matchmakerConfig,
     functionName: 'matchCounter',
   }) as { data: bigint | undefined, isLoading: boolean };
-
-  const { writeContract: enterPool, data: hash, isPending, error } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
-
-  useEffect(() => {
-    if (isConfirmed) {
-      toast.success('Successfully entered the pool!');
-      // --- THE FIX IS HERE ---
-      // We are now explicitly telling wagmi which queries to refetch.
-      // This will force the `isInPool` hook in the ProfileCreator component to get the new status.
-      queryClient.invalidateQueries({ queryKey: [matchmakerConfig.address, 'isInPool', address] });
-      queryClient.invalidateQueries({ queryKey: [matchmakerConfig.address, 'getMatchingPoolSize'] });
-    }
-    if(error){
-        toast.error(error.message)
-    }
-  }, [isConfirmed, error, queryClient, address]); // Add address to dependency array
 
   return (
     <section>
@@ -44,11 +31,11 @@ export function Matchmaking() {
         </p>
       </div>
       <button 
-        disabled={isPending || isConfirming} 
-        onClick={() => enterPool({ ...matchmakerConfig, functionName: 'enterMatchingPool' })}
-        className="w-full justify-center rounded-md border border-transparent bg-green-600 py-3 px-4 text-base font-medium text-white shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:bg-gray-400"
+        disabled={isEnteringPool || isConfirming} 
+        onClick={() => onEnterPool({ ...matchmakerConfig, functionName: 'enterMatchingPool' })}
+        className="w-full justify-center rounded-md border border-transparent bg-green-600 py-3 px-4 text-base font-medium text-white shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed"
       >
-        {isPending ? 'Confirming in wallet...' : isConfirming ? 'Processing on-chain...' : 'Enter Matching Pool'}
+        {isEnteringPool ? 'Confirming...' : isConfirming ? 'Processing...' : 'Enter Matching Pool'}
       </button>
     </section>
   );
