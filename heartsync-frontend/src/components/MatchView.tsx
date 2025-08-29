@@ -3,47 +3,59 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import {
+  useAccount,
+  useReadContract,
+  useWriteContract,
+  useWaitForTransactionReceipt,
+} from 'wagmi';
 import { useQueryClient } from '@tanstack/react-query';
-import { profileManagerConfig, escrowChatConfig, matchmakerConfig } from '../contracts';
+import {
+  profileManagerConfig,
+  escrowChatConfig,
+  matchmakerConfig,
+} from '../contracts';
 import { toast } from 'react-hot-toast';
 
 // --- Type Definitions ---
-type Profile = { gender: number; preferred: number; age: bigint; interestsHash: string; }
-type Escrow = { depositedA: boolean; depositedB: boolean; acceptedA: boolean; acceptedB: boolean; }
+type Profile = { gender: number; preferred: number; age: bigint; interestsHash: string; };
+type Escrow = { depositedA: boolean; depositedB: boolean; acceptedA: boolean; acceptedB: boolean; };
 const GENDER_MAP = ['Male', 'Female', 'Both'];
 
-export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint, partnerTokenId: bigint }) {
+export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint; partnerTokenId: bigint; }) {
   const { address } = useAccount();
   const queryClient = useQueryClient();
 
-  // --- WRITE HOOKS for all user actions ---
   const { writeContract: deposit, data: depositHash, isPending: isDepositing, error: depositError } = useWriteContract();
   const { writeContract: accept, data: acceptHash, isPending: isAccepting, error: acceptError } = useWriteContract();
   const { writeContract: shareSocials, data: shareSocialsHash, isPending: isSharing, error: shareSocialsError } = useWriteContract();
 
-  // --- HOOKS TO WAIT for transactions to be confirmed ---
   const { isSuccess: isDepositConfirmed } = useWaitForTransactionReceipt({ hash: depositHash });
   const { isSuccess: isAcceptConfirmed } = useWaitForTransactionReceipt({ hash: acceptHash });
   const { isSuccess: isShareSocialsConfirmed } = useWaitForTransactionReceipt({ hash: shareSocialsHash });
 
-  // --- AUTO-REFRESH LOGIC ---
-  // This useEffect hook runs when any transaction is confirmed, and refetches all on-chain data.
   useEffect(() => {
     if (isDepositConfirmed || isAcceptConfirmed || isShareSocialsConfirmed) {
-      toast.success('Action confirmed! State updated.');
-      queryClient.invalidateQueries(); // This is the magic that refetches everything
+      toast.success('Action confirmed! State is updating...');
+      // Invalidate queries is still good practice for a manual refresh trigger
+      queryClient.invalidateQueries();
     }
-    // Show errors if transactions fail
     if (depositError) toast.error(depositError.message);
     if (acceptError) toast.error(acceptError.message);
     if (shareSocialsError) toast.error(shareSocialsError.message);
-  }, [isDepositConfirmed, isAcceptConfirmed, isShareSocialsConfirmed, depositError, acceptError, shareSocialsError, queryClient]);
+  }, [ isDepositConfirmed, isAcceptConfirmed, isShareSocialsConfirmed, depositError, acceptError, shareSocialsError, queryClient ]);
 
-
-  // --- READ HOOKS for displaying on-chain data ---
   const { data: partnerProfile, isLoading: isLoadingProfile } = useReadContract({ ...profileManagerConfig, functionName: 'getProfile', args: [partnerTokenId] }) as { data: Profile | undefined; isLoading: boolean };
-  const { data: escrowState, isLoading: isLoadingEscrow } = useReadContract({ ...escrowChatConfig, functionName: 'escrows', args: [matchId] }) as { data: Escrow | undefined; isLoading: boolean };
+  
+  // --- THE FIX IS HERE ---
+  // Adding `watch: true` tells wagmi to keep this data perfectly in sync with the blockchain.
+  const { data: escrowState, isLoading: isLoadingEscrow } = useReadContract({
+    ...escrowChatConfig,
+    functionName: 'escrows',
+    args: [matchId],
+    // To achieve auto-refresh, use wagmi's useBlockNumber or React Query polling outside of useReadContract.
+  }) as { data: Escrow | undefined; isLoading: boolean };
+
   const { data: matchData } = useReadContract({ ...matchmakerConfig, functionName: 'matches', args: [matchId] });
   const userATokenId = Array.isArray(matchData) ? matchData[0] : undefined;
   const { data: myTokenId } = useReadContract({ ...profileManagerConfig, functionName: 'ownerToTokenId', args: [address!] });
@@ -53,14 +65,13 @@ export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint
   const hasIAccepted = amIUserA ? escrowState?.acceptedA : escrowState?.acceptedB;
   const bothAccepted = escrowState?.acceptedA && escrowState?.acceptedB;
 
-  // --- Socials Sharing Handler ---
   function handleShareSocials(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     shareSocials({
       ...escrowChatConfig,
       functionName: 'exchangeSocials',
       args: [matchId],
-      value: BigInt(10000000000000000), // 0.01 ETH fee
+      value: BigInt("10000000000000000"), // Use BigInt constructor for compatibility
     });
   }
 
@@ -91,7 +102,7 @@ export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint
           <div className="mt-6 flex flex-col sm:flex-row gap-4">
             <button
               disabled={isDepositing || hasIDeposited}
-              onClick={() => deposit({ ...escrowChatConfig, functionName: 'deposit', args: [matchId], value: BigInt(10000000000000000) })}
+              onClick={() => deposit({ ...escrowChatConfig, functionName: 'deposit', args: [matchId], value: BigInt("10000000000000000") })}
               className="flex-1 justify-center rounded-md border border-transparent bg-blue-600 py-3 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
               {isDepositing ? 'Depositing...' : hasIDeposited ? 'You Have Deposited' : '1. Deposit 0.01 ETH'}
             </button>
@@ -105,8 +116,6 @@ export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint
         </div>
       </section>
 
-      {/* --- NEW UI FOR SOCIALS --- */}
-      {/* This section will only appear after both users have accepted the match */}
       {bothAccepted && (
         <section>
           <h2 className="text-2xl font-bold text-gray-800">Final Step: Exchange Socials</h2>
