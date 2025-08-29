@@ -62,7 +62,7 @@ export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint
     <div>
       <h2 className="text-2xl font-bold text-indigo-600">You have a new match!</h2>
       <div className="mt-4 p-4 border rounded-lg bg-white shadow">
-        <h3 className="text-lg font-semibold">Your Partner's Profile (Token ID: {partnerTokenId.toString()})</h3>
+    <h3 className="text-lg font-semibold">Your Partner&apos;s Profile (Token ID: {partnerTokenId.toString()})</h3>
         {isLoadingProfile ? <p>Loading partner info...</p> : (
           <div className="text-sm text-gray-700">
             <p><strong>Age:</strong> {partnerProfile?.age.toString()}</p>
