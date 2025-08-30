@@ -1,35 +1,33 @@
-// src/app/providers.tsx
+// src/app/providers.tsx (Final Type-Safe Version)
 
 'use client';
 
 import React from 'react';
-import { PrivyProvider } from '@privy-io/react-auth';
+// --- FIX: Import the 'User' type from Privy ---
+import { PrivyProvider, User } from '@privy-io/react-auth';
 import { WagmiProvider, createConfig, http } from 'wagmi';
 import { sepolia } from 'wagmi/chains';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
-
-
 
 const queryClient = new QueryClient();
 
 export const config = createConfig({
   chains: [sepolia],
   transports: {
-    // --- THIS IS THE FIX ---
-    // We are now explicitly telling wagmi to use your Alchemy RPC URL.
-    [sepolia.id]: http(process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL), 
+    [sepolia.id]: http(process.env.NEXT_PUBLIC_ALCHEMY_RPC_URL),
   },
 });
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  // The handleLogin function has been removed as it is not needed here.
-  
+  // --- FIX: Use the official 'User' type instead of 'any' ---
+  // const handleLogin = (user: User) => {
+  //   console.log(`User logged in: ${user.id}`);
+  // };
+
   return (
     <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID || ''}
-      // There are NO event handler props like onLogin or onSuccess here.
-      // This is the correct configuration.
       config={{
         appearance: {
           theme: 'light',
