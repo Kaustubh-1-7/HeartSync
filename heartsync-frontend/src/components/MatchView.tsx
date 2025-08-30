@@ -1,14 +1,16 @@
-// src/components/MatchView.tsx (Final, Robust Version)
+// src/components/MatchView.tsx (Final, Definitive, and Correct Version)
 
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   useAccount,
   useReadContract,
   useWriteContract,
   useWaitForTransactionReceipt,
 } from 'wagmi';
+// --- THE FIX IS HERE: Import useQueryClient from the correct library ---
+import { useQueryClient } from '@tanstack/react-query';
 import {
   profileManagerConfig,
   escrowChatConfig,
@@ -23,57 +25,35 @@ const GENDER_MAP = ['Male', 'Female', 'Both'];
 
 export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint; partnerTokenId: bigint; }) {
   const { address } = useAccount();
+  const queryClient = useQueryClient();
 
-  // --- READ HOOKS for displaying on-chain data ---
+  const { writeContract: deposit, data: depositHash, isPending: isDepositing, error: depositError } = useWriteContract();
+  const { writeContract: accept, data: acceptHash, isPending: isAccepting, error: acceptError } = useWriteContract();
+  const { writeContract: shareSocials, data: shareSocialsHash, isPending: isSharing, error: shareSocialsError } = useWriteContract();
+
+  const { isSuccess: isDepositConfirmed } = useWaitForTransactionReceipt({ hash: depositHash });
+  const { isSuccess: isAcceptConfirmed } = useWaitForTransactionReceipt({ hash: acceptHash });
+  const { isSuccess: isShareSocialsConfirmed } = useWaitForTransactionReceipt({ hash: shareSocialsHash });
+
+  // This is the correct pattern: useEffect watches for confirmation and then invalidates the query.
+  useEffect(() => {
+    if (isDepositConfirmed || isAcceptConfirmed || isShareSocialsConfirmed) {
+      toast.success('Action confirmed! Updating status...');
+      queryClient.invalidateQueries({ queryKey: [escrowChatConfig.address, 'escrows', matchId] });
+    }
+  }, [isDepositConfirmed, isAcceptConfirmed, isShareSocialsConfirmed, queryClient, matchId]);
+
+  useEffect(() => {
+    if (depositError) toast.error(depositError.message);
+    if (acceptError) toast.error(acceptError.message);
+    if (shareSocialsError) toast.error(shareSocialsError.message);
+  }, [depositError, acceptError, shareSocialsError]);
+
   const { data: partnerProfile, isLoading: isLoadingProfile } = useReadContract({ ...profileManagerConfig, functionName: 'getProfile', args: [partnerTokenId] }) as { data: Profile | undefined; isLoading: boolean };
-  
-  // --- THE FIX STARTS HERE ---
-  // 1. Get the `refetch` function from the escrow state hook.
-  const { data: escrowState, isLoading: isLoadingEscrow, refetch: refetchEscrowState } = useReadContract({
-    ...escrowChatConfig,
-    functionName: 'escrows',
-    args: [matchId],
-  }) as { data: Escrow | undefined; isLoading: boolean; refetch: () => void };
-  
+  const { data: escrowState, isLoading: isLoadingEscrow } = useReadContract({ ...escrowChatConfig, functionName: 'escrows', args: [matchId] }) as { data: Escrow | undefined; isLoading: boolean };
   const { data: matchData } = useReadContract({ ...matchmakerConfig, functionName: 'matches', args: [matchId] });
   const userATokenId = Array.isArray(matchData) ? matchData[0] : undefined;
   const { data: myTokenId } = useReadContract({ ...profileManagerConfig, functionName: 'ownerToTokenId', args: [address!] });
-  
-  // --- WRITE HOOKS for all user actions ---
-  const { writeContract: deposit, data: depositHash, isPending: isDepositing } = useWriteContract();
-  const { writeContract: accept, data: acceptHash, isPending: isAccepting } = useWriteContract();
-  const { writeContract: shareSocials, data: shareSocialsHash, isPending: isSharing } = useWriteContract();
-
-  // 2. Listen for transaction receipt status changes using useWaitForTransactionReceipt and useEffect.
-  const { isSuccess: isDepositSuccess, isError: isDepositError, error: depositError } = useWaitForTransactionReceipt({
-    hash: depositHash,
-  });
-
-  const { isSuccess: isAcceptSuccess, isError: isAcceptError, error: acceptError } = useWaitForTransactionReceipt({
-    hash: acceptHash,
-  });
-
-  React.useEffect(() => {
-    if (isDepositSuccess) {
-      toast.success('Deposit confirmed! Updating status...');
-      refetchEscrowState();
-    }
-    if (isDepositError && depositError) {
-      toast.error(depositError.message);
-    }
-  }, [isDepositSuccess, isDepositError, depositError, refetchEscrowState]);
-
-  React.useEffect(() => {
-    if (isAcceptSuccess) {
-      toast.success('Match accepted! Updating status...');
-      refetchEscrowState();
-    }
-    if (isAcceptError && acceptError) {
-      toast.error(acceptError.message);
-    }
-  }, [isAcceptSuccess, isAcceptError, acceptError, refetchEscrowState]);
-  
-  // The old `useEffect` has been removed as this pattern is more robust.
 
   const amIUserA = myTokenId === userATokenId;
   const hasIDeposited = amIUserA ? escrowState?.depositedA : escrowState?.depositedB;
@@ -82,7 +62,7 @@ export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint
 
   function handleShareSocials(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    shareSocials({ ...escrowChatConfig, functionName: 'exchangeSocials', args: [matchId], value: BigInt("10000000000000000"), });
+    shareSocials({ ...escrowChatConfig, functionName: 'exchangeSocials', args: [matchId], value: BigInt("10000000000000000") });
   }
 
   return (
@@ -103,7 +83,7 @@ export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint
       <section>
         <h2 className="text-2xl font-bold text-gray-800">Next Steps: Escrow & Acceptance</h2>
         <div className="mt-4 p-6 border rounded-xl bg-white shadow-sm">
-          {isLoadingEscrow ? <p>Loading escrow status...</p> : (
+          {isLoadingEscrow ? <p className="animate-pulse">Loading escrow status...</p> : (
             <ul className="space-y-3 text-lg">
               <li className="flex items-center gap-x-3">{escrowState?.depositedA && escrowState?.depositedB ? <span className="text-green-500">✅</span> : <span className="text-yellow-600">⏳</span>} Both users deposit 0.01 ETH.</li>
               <li className="flex items-center gap-x-3">{bothAccepted ? <span className="text-green-500">✅</span> : <span className="text-yellow-600">⏳</span>} Both users accept the match.</li>
@@ -112,7 +92,7 @@ export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint
           <div className="mt-6 flex flex-col sm:flex-row gap-4">
             <button
               disabled={isDepositing || !!hasIDeposited}
-              onClick={() => deposit({ ...escrowChatConfig, functionName: 'deposit', args: [matchId], value:BigInt("10000000000000000"), })}
+              onClick={() => deposit({ ...escrowChatConfig, functionName: 'deposit', args: [matchId], value: BigInt("10000000000000000") })}
               className="flex-1 justify-center rounded-md border border-transparent bg-blue-600 py-3 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
               {isDepositing ? 'Depositing...' : hasIDeposited ? 'You Have Deposited' : '1. Deposit 0.01 ETH'}
             </button>
