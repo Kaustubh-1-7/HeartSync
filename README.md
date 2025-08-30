@@ -4,7 +4,7 @@
 
 ---
 
-## Live Demo & Screenshot
+## Live Demo 
 
 **🔗 Live Application URL:** **[heart-sync-eight.vercel.app]([YOUR_VERCEL_URL])**
 
