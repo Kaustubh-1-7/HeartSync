@@ -2,7 +2,7 @@
 
 'use client';
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import {
   useAccount,
   useReadContract,
@@ -24,39 +24,56 @@ const GENDER_MAP = ['Male', 'Female', 'Both'];
 export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint; partnerTokenId: bigint; }) {
   const { address } = useAccount();
 
-  const { writeContract: deposit, data: depositHash, isPending: isDepositing, error: depositError } = useWriteContract();
-  const { writeContract: accept, data: acceptHash, isPending: isAccepting, error: acceptError } = useWriteContract();
-  const { writeContract: shareSocials, data: shareSocialsHash, isPending: isSharing, error: shareSocialsError } = useWriteContract();
-
-  const { isSuccess: isDepositConfirmed } = useWaitForTransactionReceipt({ hash: depositHash });
-  const { isSuccess: isAcceptConfirmed } = useWaitForTransactionReceipt({ hash: acceptHash });
-  const { isSuccess: isShareSocialsConfirmed } = useWaitForTransactionReceipt({ hash: shareSocialsHash });
-
+  // --- READ HOOKS for displaying on-chain data ---
   const { data: partnerProfile, isLoading: isLoadingProfile } = useReadContract({ ...profileManagerConfig, functionName: 'getProfile', args: [partnerTokenId] }) as { data: Profile | undefined; isLoading: boolean };
   
   // --- THE FIX STARTS HERE ---
-  // 1. We get the `refetch` function from the `useReadContract` hook for the escrow state.
+  // 1. Get the `refetch` function from the escrow state hook.
   const { data: escrowState, isLoading: isLoadingEscrow, refetch: refetchEscrowState } = useReadContract({
     ...escrowChatConfig,
     functionName: 'escrows',
     args: [matchId],
   }) as { data: Escrow | undefined; isLoading: boolean; refetch: () => void };
-
-  // 2. This useEffect hook now explicitly calls `refetchEscrowState` when a transaction is confirmed.
-  useEffect(() => {
-    if (isDepositConfirmed || isAcceptConfirmed || isShareSocialsConfirmed) {
-      toast.success('Action confirmed! Updating status...');
-      refetchEscrowState(); // This is the magic that guarantees the UI updates.
-    }
-    if (depositError) toast.error(depositError.message);
-    if (acceptError) toast.error(acceptError.message);
-    if (shareSocialsError) toast.error(shareSocialsError.message);
-  }, [ isDepositConfirmed, isAcceptConfirmed, isShareSocialsConfirmed, depositError, acceptError, shareSocialsError, refetchEscrowState ]);
-
-
+  
   const { data: matchData } = useReadContract({ ...matchmakerConfig, functionName: 'matches', args: [matchId] });
   const userATokenId = Array.isArray(matchData) ? matchData[0] : undefined;
   const { data: myTokenId } = useReadContract({ ...profileManagerConfig, functionName: 'ownerToTokenId', args: [address!] });
+  
+  // --- WRITE HOOKS for all user actions ---
+  const { writeContract: deposit, data: depositHash, isPending: isDepositing } = useWriteContract();
+  const { writeContract: accept, data: acceptHash, isPending: isAccepting } = useWriteContract();
+  const { writeContract: shareSocials, data: shareSocialsHash, isPending: isSharing } = useWriteContract();
+
+  // 2. Listen for transaction receipt status changes using useWaitForTransactionReceipt and useEffect.
+  const { isSuccess: isDepositSuccess, isError: isDepositError, error: depositError } = useWaitForTransactionReceipt({
+    hash: depositHash,
+  });
+
+  const { isSuccess: isAcceptSuccess, isError: isAcceptError, error: acceptError } = useWaitForTransactionReceipt({
+    hash: acceptHash,
+  });
+
+  React.useEffect(() => {
+    if (isDepositSuccess) {
+      toast.success('Deposit confirmed! Updating status...');
+      refetchEscrowState();
+    }
+    if (isDepositError && depositError) {
+      toast.error(depositError.message);
+    }
+  }, [isDepositSuccess, isDepositError, depositError, refetchEscrowState]);
+
+  React.useEffect(() => {
+    if (isAcceptSuccess) {
+      toast.success('Match accepted! Updating status...');
+      refetchEscrowState();
+    }
+    if (isAcceptError && acceptError) {
+      toast.error(acceptError.message);
+    }
+  }, [isAcceptSuccess, isAcceptError, acceptError, refetchEscrowState]);
+  
+  // The old `useEffect` has been removed as this pattern is more robust.
 
   const amIUserA = myTokenId === userATokenId;
   const hasIDeposited = amIUserA ? escrowState?.depositedA : escrowState?.depositedB;
@@ -65,12 +82,7 @@ export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint
 
   function handleShareSocials(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    shareSocials({
-      ...escrowChatConfig,
-      functionName: 'exchangeSocials',
-      args: [matchId],
-      value: BigInt(10000000000000000),
-    });
+    shareSocials({ ...escrowChatConfig, functionName: 'exchangeSocials', args: [matchId], value: BigInt("10000000000000000"), });
   }
 
   return (
@@ -100,7 +112,7 @@ export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint
           <div className="mt-6 flex flex-col sm:flex-row gap-4">
             <button
               disabled={isDepositing || !!hasIDeposited}
-              onClick={() => deposit({ ...escrowChatConfig, functionName: 'deposit', args: [matchId], value: BigInt(10000000000000000) })}
+              onClick={() => deposit({ ...escrowChatConfig, functionName: 'deposit', args: [matchId], value:BigInt("10000000000000000"), })}
               className="flex-1 justify-center rounded-md border border-transparent bg-blue-600 py-3 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
               {isDepositing ? 'Depositing...' : hasIDeposited ? 'You Have Deposited' : '1. Deposit 0.01 ETH'}
             </button>
