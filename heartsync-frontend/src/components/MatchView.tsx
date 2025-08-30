@@ -1,4 +1,4 @@
-// src/components/MatchView.tsx (Final Corrected Version)
+// src/components/MatchView.tsx (Final, Robust Version)
 
 'use client';
 
@@ -9,7 +9,6 @@ import {
   useWriteContract,
   useWaitForTransactionReceipt,
 } from 'wagmi';
-import { useQueryClient } from '@tanstack/react-query';
 import {
   profileManagerConfig,
   escrowChatConfig,
@@ -24,7 +23,6 @@ const GENDER_MAP = ['Male', 'Female', 'Both'];
 
 export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint; partnerTokenId: bigint; }) {
   const { address } = useAccount();
-  const queryClient = useQueryClient();
 
   const { writeContract: deposit, data: depositHash, isPending: isDepositing, error: depositError } = useWriteContract();
   const { writeContract: accept, data: acceptHash, isPending: isAccepting, error: acceptError } = useWriteContract();
@@ -34,27 +32,27 @@ export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint
   const { isSuccess: isAcceptConfirmed } = useWaitForTransactionReceipt({ hash: acceptHash });
   const { isSuccess: isShareSocialsConfirmed } = useWaitForTransactionReceipt({ hash: shareSocialsHash });
 
+  const { data: partnerProfile, isLoading: isLoadingProfile } = useReadContract({ ...profileManagerConfig, functionName: 'getProfile', args: [partnerTokenId] }) as { data: Profile | undefined; isLoading: boolean };
+  
+  // --- THE FIX STARTS HERE ---
+  // 1. We get the `refetch` function from the `useReadContract` hook for the escrow state.
+  const { data: escrowState, isLoading: isLoadingEscrow, refetch: refetchEscrowState } = useReadContract({
+    ...escrowChatConfig,
+    functionName: 'escrows',
+    args: [matchId],
+  }) as { data: Escrow | undefined; isLoading: boolean; refetch: () => void };
+
+  // 2. This useEffect hook now explicitly calls `refetchEscrowState` when a transaction is confirmed.
   useEffect(() => {
     if (isDepositConfirmed || isAcceptConfirmed || isShareSocialsConfirmed) {
-      toast.success('Action confirmed! State is updating...');
-      // Invalidate queries is still good practice for a manual refresh trigger
-      queryClient.invalidateQueries();
+      toast.success('Action confirmed! Updating status...');
+      refetchEscrowState(); // This is the magic that guarantees the UI updates.
     }
     if (depositError) toast.error(depositError.message);
     if (acceptError) toast.error(acceptError.message);
     if (shareSocialsError) toast.error(shareSocialsError.message);
-  }, [ isDepositConfirmed, isAcceptConfirmed, isShareSocialsConfirmed, depositError, acceptError, shareSocialsError, queryClient ]);
+  }, [ isDepositConfirmed, isAcceptConfirmed, isShareSocialsConfirmed, depositError, acceptError, shareSocialsError, refetchEscrowState ]);
 
-  const { data: partnerProfile, isLoading: isLoadingProfile } = useReadContract({ ...profileManagerConfig, functionName: 'getProfile', args: [partnerTokenId] }) as { data: Profile | undefined; isLoading: boolean };
-  
-  // --- THE FIX IS HERE ---
-  // Adding `watch: true` tells wagmi to keep this data perfectly in sync with the blockchain.
-  const { data: escrowState, isLoading: isLoadingEscrow } = useReadContract({
-    ...escrowChatConfig,
-    functionName: 'escrows',
-    args: [matchId],
-    // To achieve auto-refresh, use wagmi's useBlockNumber or React Query polling outside of useReadContract.
-  }) as { data: Escrow | undefined; isLoading: boolean };
 
   const { data: matchData } = useReadContract({ ...matchmakerConfig, functionName: 'matches', args: [matchId] });
   const userATokenId = Array.isArray(matchData) ? matchData[0] : undefined;
@@ -71,7 +69,7 @@ export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint
       ...escrowChatConfig,
       functionName: 'exchangeSocials',
       args: [matchId],
-      value: BigInt("10000000000000000"), // Use BigInt constructor for compatibility
+      value: BigInt(10000000000000000),
     });
   }
 
@@ -101,13 +99,13 @@ export default function MatchView({ matchId, partnerTokenId }: { matchId: bigint
           )}
           <div className="mt-6 flex flex-col sm:flex-row gap-4">
             <button
-              disabled={isDepositing || hasIDeposited}
-              onClick={() => deposit({ ...escrowChatConfig, functionName: 'deposit', args: [matchId], value: BigInt("10000000000000000") })}
+              disabled={isDepositing || !!hasIDeposited}
+              onClick={() => deposit({ ...escrowChatConfig, functionName: 'deposit', args: [matchId], value: BigInt(10000000000000000) })}
               className="flex-1 justify-center rounded-md border border-transparent bg-blue-600 py-3 px-4 text-sm font-medium text-white shadow-sm hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
               {isDepositing ? 'Depositing...' : hasIDeposited ? 'You Have Deposited' : '1. Deposit 0.01 ETH'}
             </button>
             <button
-              disabled={isAccepting || hasIAccepted || !escrowState?.depositedA || !escrowState?.depositedB}
+              disabled={isAccepting || !!hasIAccepted || !escrowState?.depositedA || !escrowState?.depositedB}
               onClick={() => accept({ ...escrowChatConfig, functionName: 'acceptMatch', args: [matchId] })}
               className="flex-1 justify-center rounded-md border border-transparent bg-green-600 py-3 px-4 text-sm font-medium text-white shadow-sm hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed">
               {isAccepting ? 'Accepting...' : hasIAccepted ? 'You Accepted' : '2. Accept Match'}
