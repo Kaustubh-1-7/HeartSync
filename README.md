@@ -115,8 +115,4 @@ To run a local copy of this project, follow these simple steps.
 -   **DAO Governance:** Transition control of the treasury and key platform parameters to a DAO governed by token holders.
 -   **Off-Chain Communication:** Integrate a decentralized messaging protocol (e.g., XMTP) to allow for private, encrypted chat between matched users.
 
-## License
 
-Distributed under the MIT License. See `LICENSE` for more information.
-
----```
